@@ -45,9 +45,13 @@ public class OrderDTO {
                 .createdAt(order.getCreatedAt() != null
                         ? order.getCreatedAt().toString()
                         : null)
-                .orderItems(order.getOrderItems().stream()
-                        .map(OrderItemDTO::fromEntity)
-                        .collect(Collectors.toList()))
+                .orderItems(
+                        order.getOrderItems() == null
+                                ? List.of()
+                                : order.getOrderItems().stream()
+                                .map(OrderItemDTO::fromEntity)
+                                .collect(Collectors.toList())
+                )
                 .build();
     }
 }

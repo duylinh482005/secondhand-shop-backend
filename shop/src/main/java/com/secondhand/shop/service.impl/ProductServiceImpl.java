@@ -103,8 +103,8 @@ public class ProductServiceImpl implements ProductService {
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
 
         // Soft delete
-        product.setStatus(Product.ProductStatus.DELETED);
-        productRepository.save(product);
+        productRepository.deleteById(id);
+
     }
 
     @Override

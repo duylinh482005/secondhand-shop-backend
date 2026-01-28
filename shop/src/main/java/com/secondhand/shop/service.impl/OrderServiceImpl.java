@@ -42,61 +42,105 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderDTO createOrder(OrderDTO orderDTO) {
-        // Validate customer
-        Customer customer = customerRepository.findById(orderDTO.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer not found with id: " + orderDTO.getCustomerId()));
+        System.out.println("=== CREATE ORDER START ===");
+        System.out.println("OrderDTO: " + orderDTO);
 
-        // Generate order code
-        String orderCode = generateOrderCode();
+        try {
+            // Validate customer
+            Customer customer = customerRepository.findById(orderDTO.getCustomerId())
+                    .orElseThrow(() -> new RuntimeException("Customer not found with id: " + orderDTO.getCustomerId()));
 
-        // Create order
-        Order order = Order.builder()
-                .orderCode(orderCode)
-                .customer(customer)
-                .totalAmount(orderDTO.getTotalAmount())
-                .discountAmount(orderDTO.getDiscountAmount())
-                .finalAmount(orderDTO.getFinalAmount())
-                .status(Order.OrderStatus.PENDING)
-                .shippingAddress(orderDTO.getShippingAddress())
-                .shippingPhone(orderDTO.getShippingPhone())
-                .note(orderDTO.getNote())
-                .build();
+            System.out.println("Customer found: " + customer.getId());
 
-        Order savedOrder = orderRepository.save(order);
+            // Generate order code
+            String orderCode = generateOrderCode();
+            System.out.println("Generated order code: " + orderCode);
 
-        // Create order items
-        if (orderDTO.getOrderItems() != null && !orderDTO.getOrderItems().isEmpty()) {
-            for (OrderItemDTO itemDTO : orderDTO.getOrderItems()) {
-                Product product = productRepository.findById(itemDTO.getProductId())
-                        .orElseThrow(() -> new RuntimeException("Product not found with id: " + itemDTO.getProductId()));
+            // Create order
+            Order order = Order.builder()
+                    .orderCode(orderCode)
+                    .customer(customer)
+                    .totalAmount(orderDTO.getTotalAmount())
+                    .discountAmount(orderDTO.getDiscountAmount())
+                    .finalAmount(orderDTO.getFinalAmount())
+                    .status(Order.OrderStatus.PENDING)
+                    .shippingAddress(orderDTO.getShippingAddress())
+                    .shippingPhone(orderDTO.getShippingPhone())
+                    .note(orderDTO.getNote())
+                    .build();
 
-                OrderItem orderItem = OrderItem.builder()
-                        .order(savedOrder)
-                        .product(product)
-                        .productName(product.getName())
-                        .price(itemDTO.getPrice())
-                        .quantity(itemDTO.getQuantity())
-                        .subtotal(itemDTO.getSubtotal())
-                        .build();
+            Order savedOrder = orderRepository.save(order);
+            System.out.println("Order saved with id: " + savedOrder.getId());
 
-                orderItemRepository.save(orderItem);
+            // Create order items
+            if (orderDTO.getOrderItems() != null && !orderDTO.getOrderItems().isEmpty()) {
+                System.out.println("Processing " + orderDTO.getOrderItems().size() + " order items");
 
-                // Update product quantity
-                if (product.getQuantity() >= itemDTO.getQuantity()) {
+                for (OrderItemDTO itemDTO : orderDTO.getOrderItems()) {
+                    System.out.println("Processing item - Product ID: " + itemDTO.getProductId());
+
+                    // Validate product exists
+                    Product product = productRepository.findById(itemDTO.getProductId())
+                            .orElseThrow(() -> new RuntimeException("Sản phẩm ID " + itemDTO.getProductId() + " không tồn tại hoặc đã bị xóa!"));
+
+                    System.out.println("Product found: " + product.getName());
+
+                    // Check product status
+                    if (product.getStatus() == Product.ProductStatus.DELETED) {
+                        throw new RuntimeException("Sản phẩm '" + product.getName() + "' đã ngừng bán!");
+                    }
+
+                    if (product.getStatus() == Product.ProductStatus.SOLD) {
+                        throw new RuntimeException("Sản phẩm '" + product.getName() + "' đã được bán!");
+                    }
+
+                    // Check quantity
+                    if (product.getQuantity() < itemDTO.getQuantity()) {
+                        throw new RuntimeException("Sản phẩm '" + product.getName() + "' chỉ còn " + product.getQuantity() + " sản phẩm!");
+                    }
+
+                    // Create order item
+                    OrderItem orderItem = OrderItem.builder()
+                            .order(savedOrder)
+                            .product(product)
+                            .productName(product.getName())
+                            .price(itemDTO.getPrice())
+                            .quantity(itemDTO.getQuantity())
+                            .subtotal(itemDTO.getSubtotal())
+                            .build();
+
+                    orderItemRepository.save(orderItem);
+                    System.out.println("Order item saved");
+
+                    // Update product quantity
                     product.setQuantity(product.getQuantity() - itemDTO.getQuantity());
                     if (product.getQuantity() == 0) {
                         product.setStatus(Product.ProductStatus.SOLD);
                     }
                     productRepository.save(product);
+                    System.out.println("Product quantity updated: " + product.getQuantity());
                 }
             }
+
+            // Update customer stats
+            customer.setTotalOrders(customer.getTotalOrders() + 1);
+            customerRepository.save(customer);
+            System.out.println("Customer stats updated");
+
+            System.out.println("=== CREATE ORDER SUCCESS ===");
+
+            return OrderDTO.fromEntity(orderRepository.findById(savedOrder.getId()).get());
+
+        } catch (RuntimeException e) {
+            System.err.println("=== CREATE ORDER ERROR ===");
+            System.err.println("Error: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        } catch (Exception e) {
+            System.err.println("=== UNEXPECTED ERROR ===");
+            e.printStackTrace();
+            throw new RuntimeException("Lỗi hệ thống khi tạo đơn hàng: " + e.getMessage());
         }
-
-        // Update customer stats
-        customer.setTotalOrders(customer.getTotalOrders() + 1);
-        customerRepository.save(customer);
-
-        return OrderDTO.fromEntity(orderRepository.findById(savedOrder.getId()).get());
     }
 
     @Override
@@ -106,7 +150,6 @@ public class OrderServiceImpl implements OrderService {
 
         order.setStatus(Order.OrderStatus.valueOf(status));
 
-        // ✅ SỬA: Dùng phép cộng Double thay vì BigDecimal
         if (status.equals("DELIVERED")) {
             Customer customer = order.getCustomer();
             customer.setTotalSpent(customer.getTotalSpent() + order.getFinalAmount());
@@ -122,7 +165,6 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + id));
 
-        // Only allow cancel if order is PENDING or CONFIRMED
         if (order.getStatus() == Order.OrderStatus.PENDING ||
                 order.getStatus() == Order.OrderStatus.CONFIRMED) {
 
@@ -158,7 +200,6 @@ public class OrderServiceImpl implements OrderService {
                 .collect(Collectors.toList());
     }
 
-    // Generate unique order code
     private String generateOrderCode() {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
         long count = orderRepository.count() + 1;
