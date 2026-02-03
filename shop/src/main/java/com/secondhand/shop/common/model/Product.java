@@ -49,9 +49,6 @@ public class Product {
     @Column(nullable = false)
     private ProductStatus status = ProductStatus.AVAILABLE;
 
-    @Column(nullable = false)
-    private boolean deleted = false;
-
 
     @Column(nullable = false)
     private Integer views = 0;

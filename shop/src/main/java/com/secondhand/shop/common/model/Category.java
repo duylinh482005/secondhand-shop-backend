@@ -30,10 +30,6 @@ public class Category {
     @Column(nullable = false)
     private CategoryStatus status = CategoryStatus.ACTIVE;
 
-    @Column(nullable = false)
-    private boolean deleted = false;
-
-
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
